@@ -1,0 +1,147 @@
+具体安装OpenVPN的过程如下：
+
+安装RPMForge：
+下载rpmforge-release
+i386: http://apt.sw.be/redhat/el5/en/i386/RPMS.dag/rpmforge-release-0.3.6-1.el5.rf.i386.rpm
+x86_64: http://apt.sw.be/redhat/el5/en/x86_64/RPMS.dag/rpmforge-release-0.3.6-1.el5.rf.x86_64.rpm
+导入KEY
+ 
+
+rpm --import http://dag.wieers.com/rpm/packages/RPM-GPG-KEY.dag.txt
+
+安装
+rpm -i rpmforge-release-0.3.6-1.el5.rf.*.rpm
+测试
+yum check-update
+
+安装OpenVPN：
+可能系统之前没有安装openssl相关组件，先安装下
+yum install openssl openssl-devel -y
+然后再安装openvpn
+yum install openvpn -y
+根据提示会下载几个相关的软件包，一路按y确定就可以了。
+
+生成证书和key：
+find / -name easy-rsa #搜索easy-rsa目录
+#一般会在下面的目录中找到
+cd /usr/share/doc/openvpn-2.0.9/easy-rsa
+. vars #注意：点和vars之间有个空格
+chmod 777 *
+./clean-all
+./build-ca #Common Name输入server，其他默认
+./build-key-server server #Comman Name输入server，其他默认，最后按y生成证书
+./build-key client01 #Comman Name输入client01，其他默认，最后按y生成证书
+#如果需要多个客户端登录，依次生成其他客户端证书/key
+./build-key client02
+./build-key client03
+……
+#要注意，每个客户端的Comman Name必须不同
+./build-dh
+mkdir /etc/openvpn
+cp keys /etc/openvpn -r #将keys文件夹复制到/etc/openvpn目录
+tar -cf keys.tar keys #将打包好的keys.tar文件下载到本地
+
+修改配置文件：
+cd ..
+cd sample-config-files
+cp server.conf /usr/local/etc
+vi /usr/local/etc/server.conf
+服务端配置文件：
+
+local 你VPS的IP地址
+port 1194
+proto tcp
+dev tun
+ca /etc/openvpn/keys/ca.crt
+cert /etc/openvpn/keys/server.crt
+key /etc/openvpn/keys/server.key
+dh /etc/openvpn/keys/dh1024.pem
+server 10.8.0.0 255.255.255.0
+push “dhcp-option DNS 10.8.0.1″
+push “dhcp-option DNS 208.67.222.222″
+push “dhcp-option DNS 208.67.220.220″
+client-to-client
+keepalive 10 120
+comp-lzo
+persist-key
+persist-tun
+status /etc/openvpn/keys/openvpn-status.log
+verb 4
+cp client.conf /usr/local/etc
+vi /usr/local/etc/client.conf
+客户端配置文件：
+
+client
+dev tun
+proto tcp
+remote 你vps的ip 1194
+persist-key
+persist-tun
+ca ca.crt
+cert client01.crt
+key client01.key
+#这里的两个文件名必须和前面生成的证书文件名一样
+ns-cert-type server
+comp-lzo
+verb 3
+redirect-gateway def1
+运行OpenVPN：
+
+/usr/sbin/openvpn --config /usr/local/etc/server.conf &
+ 
+
+配置iptables转发规则：
+ 
+
+/sbin/iptables -t nat -A POSTROUTING -s 10.8.0.0/255.255.255.0 -j SNAT --to-source 你vps的ip
+
+/etc/init.d/iptables save
+/etc/init.d/iptables restart
+开启ip-forward：
+运行：sysctl -a | grep for
+
+net.ipv6.conf.lo.force_mld_version = 0
+net.ipv6.conf.lo.forwarding = 1
+net.ipv6.conf.default.force_mld_version = 0
+net.ipv6.conf.default.forwarding = 1
+net.ipv6.conf.all.force_mld_version = 0
+net.ipv6.conf.all.forwarding = 1
+net.ipv4.ip_forward = 1
+net.ipv4.conf.tun0.force_igmp_version = 0
+net.ipv4.conf.tun0.mc_forwarding = 0
+net.ipv4.conf.tun0.forwarding = 1
+net.ipv4.conf.venet0.force_igmp_version = 0
+net.ipv4.conf.venet0.mc_forwarding = 0
+net.ipv4.conf.venet0.forwarding = 1
+net.ipv4.conf.lo.force_igmp_version = 0
+net.ipv4.conf.lo.mc_forwarding = 0
+net.ipv4.conf.lo.forwarding = 1
+net.ipv4.conf.default.force_igmp_version = 0
+net.ipv4.conf.default.mc_forwarding = 0
+net.ipv4.conf.default.forwarding = 1
+net.ipv4.conf.all.force_igmp_version = 0
+net.ipv4.conf.all.mc_forwarding = 0
+net.ipv4.conf.all.forwarding = 1
+如果你的主机上列数值不是为1, 则要将其改成1
+例如：sysctl -w net.ipv4.ip_forward=1
+
+设置OpenVPN开机自动运行：
+vi /etc/rc.local
+在最后面加入此行:
+ 
+
+/usr/sbin/openvpn --config /usr/local/etc/server.conf > /dev/null 2>&1 &
+ 
+
+Windows下客户端的安装配置：
+下载OpenVPN GUI For Windows
+
+http://openvpn.se/files/install_packages/openvpn-2.0.9-gui-1.0.3-install.exe
+
+依屏幕指示安装OpenVPN GUI
+安装结束后，进入安装文件夹的config目录，将之前在VPS上建立的client.conf文件下载到该目录，并更名为client.ovpn
+把之前打包的keys.tar也解压到config目录里。
+然后右键点击client.ovpn选择Start OpenVPN on this config file
+或者从开始菜单里运行OpenVPN GUI，在右下角图标上点右键选Connect
+
+成功连接后，右下角的OpenVPN GUI图标会由红色变为绿色。这时你就可以使用BurstNET搭建的VPN了。
