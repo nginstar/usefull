@@ -1,0 +1,38 @@
+#Centos 7 
+yum install samba samba-client samba-swat
+nt pipe support = no
+
+ systemctl restart smb.service
+ systemctl restart nmb.service
+ systemctl enable smb.service
+ systemctl enable nmb.service
+
+#防火墙配置
+firewall-cmd --zone=public --add-port=20000-29999/tcp --permanent
+firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address=192.168.1.1 accept'
+
+
+#smb.conf
+# See smb.conf.example for a more detailed config file or
+# read the smb.conf manpage.
+# Run 'testparm' to verify the config is correct after
+# you modified it.
+[global]
+        workgroup = SAMBA
+        netbios name = CENTOS7
+        security = user
+        usershare allow guests = yes
+        map to guest = bad user
+        log file = /dev/null
+        syslog=0
+        hosts allow = 192.168.1.1
+        username map = /etc/samba/smbusers
+        guest account = www
+
+[public]
+        comment = Public Stuff
+        path = /www
+        public = yes
+        read only = No
+        directory mask = 0777
+        create mask = 0777
